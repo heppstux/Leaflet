@@ -29,6 +29,26 @@ describe("Control.Layers", function () {
 			expect(spy.args[1][0].layer).to.be(baseLayers["Layer 2"]);
 		});
 
+		it("works after removing and readding the Control.Layers to the map", function () {
+			var baseLayers = {"Layer 1": L.tileLayer(''), "Layer 2": L.tileLayer('')},
+			    layers = L.control.layers(baseLayers).addTo(map),
+			    spy = sinon.spy();
+
+			map.on('baselayerchange', spy);
+
+			map.removeControl(layers);
+			map.addControl(layers);
+
+			happen.click(layers._baseLayersList.getElementsByTagName("input")[0]);
+			expect(spy.called).to.be.ok();
+			expect(spy.args[0][0].name).to.be("Layer 1");
+			expect(spy.args[0][0].layer).to.be(baseLayers["Layer 1"]);
+			happen.click(layers._baseLayersList.getElementsByTagName("input")[1]);
+			expect(spy.calledTwice).to.be.ok();
+			expect(spy.args[1][0].name).to.be("Layer 2");
+			expect(spy.args[1][0].layer).to.be(baseLayers["Layer 2"]);
+		});
+
 		it("is not fired on input that doesn't change the base layer", function () {
 			var overlays = {"Marker 1": L.marker([0, 0]), "Marker 2": L.marker([0, 0])},
 			    layers = L.control.layers({}, overlays).addTo(map),
@@ -110,6 +130,33 @@ describe("Control.Layers", function () {
 
 			expect(layers._layers.length).to.be.equal(1);
 		});
+
+		it("having repeated layers works as expected", function () {
+			document.body.appendChild(map._container);
+			var layerA = L.tileLayer(''), layerB = L.tileLayer(''),
+			    baseLayers = {"Layer 1": layerA, "Layer 2": layerB, "Layer 3": layerA},
+			    layers = L.control.layers(baseLayers).addTo(map);
+
+			function checkInputs(idx) {
+				var inputs = map._container.querySelectorAll('.leaflet-control-layers-base input');
+				for (var i = 0; i < inputs.length; i++) {
+					expect(inputs[i].checked === (idx === i)).to.be.ok();
+				}
+			}
+
+			happen.click(layers._baseLayersList.getElementsByTagName("input")[1]);
+			checkInputs(1);
+			expect(map._layers[L.Util.stamp(layerB)]).to.be.equal(layerB);
+			expect(map._layers[L.Util.stamp(layerA)]).to.be.equal(undefined);
+			happen.click(layers._baseLayersList.getElementsByTagName("input")[0]);
+			checkInputs(0);
+			expect(map._layers[L.Util.stamp(layerA)]).to.be.equal(layerA);
+			expect(map._layers[L.Util.stamp(layerB)]).to.be.equal(undefined);
+			happen.click(layers._baseLayersList.getElementsByTagName("input")[2]);
+			checkInputs(2);
+			expect(map._layers[L.Util.stamp(layerA)]).to.be.equal(layerA);
+			expect(map._layers[L.Util.stamp(layerB)]).to.be.equal(undefined);
+		});
 	});
 
 	describe("is removed cleanly", function () {
@@ -121,6 +168,17 @@ describe("Control.Layers", function () {
 			var baseLayer = L.tileLayer('').addTo(map);
 			var layersCtrl = L.control.layers({'Base': baseLayer}).addTo(map);
 			map.removeControl(layersCtrl);
+
+			expect(function () {
+				map.removeLayer(baseLayer);
+			}).to.not.throwException();
+		});
+
+		it("and layers in the control can still be removed when added after removing control from map", function () {
+			var baseLayer = L.tileLayer('').addTo(map);
+			var layersCtrl = L.control.layers().addTo(map);
+			map.removeControl(layersCtrl);
+			layersCtrl.addBaseLayer(baseLayer, 'Base');
 
 			expect(function () {
 				map.removeLayer(baseLayer);
@@ -177,6 +235,52 @@ describe("Control.Layers", function () {
 			expect(map._container.querySelector('.leaflet-control-layers-expanded')).to.be.ok();
 			happen.click(map._container);
 			expect(map._container.querySelector('.leaflet-control-layers-expanded')).to.be.ok();
+		});
+		it('is scrollable if necessary when added on map', function () {
+			var layersCtrl = L.control.layers(null, null, {collapsed: false}),
+			    div = document.createElement('div'),
+			    i = 0;
+
+			// Need to create a DIV with specified height and insert it into DOM, so that the browser
+			// gives it an actual size.
+			map.remove();
+			div.style.height = div.style.width = '200px';
+			document.body.appendChild(div);
+			map = L.map(div);
+
+			for (; i < 20; i += 1) {
+				// Default text size: 12px => 12 * 20 = 240px height (not even considering padding/margin).
+				layersCtrl.addOverlay(L.marker([0, 0]), i);
+			}
+
+			layersCtrl.addTo(map);
+
+			expect(div.clientHeight).to.be.greaterThan(0); // Make sure first that the map container has a height, otherwise this test is useless.
+			expect(div.clientHeight).to.be.greaterThan(layersCtrl._container.clientHeight);
+			expect(layersCtrl._form.classList.contains('leaflet-control-layers-scrollbar')).to.be(true);
+		});
+		it('becomes scrollable if necessary when too many layers are added while it is already on map', function () {
+			var layersCtrl = L.control.layers(null, null, {collapsed: false}),
+			    div = document.createElement('div'),
+			    i = 0;
+
+			// Need to create a DIV with specified height and insert it into DOM, so that the browser
+			// gives it an actual size.
+			map.remove();
+			div.style.height = div.style.width = '200px';
+			document.body.appendChild(div);
+			map = L.map(div);
+
+			layersCtrl.addTo(map);
+			expect(layersCtrl._form.classList.contains('leaflet-control-layers-scrollbar')).to.be(false);
+
+			for (; i < 20; i += 1) {
+				// Default text size: 12px => 12 * 20 = 240px height (not even considering padding/margin).
+				layersCtrl.addOverlay(L.marker([0, 0]), i);
+			}
+
+			expect(div.clientHeight).to.be.greaterThan(layersCtrl._container.clientHeight);
+			expect(layersCtrl._form.classList.contains('leaflet-control-layers-scrollbar')).to.be(true);
 		});
 	});
 
